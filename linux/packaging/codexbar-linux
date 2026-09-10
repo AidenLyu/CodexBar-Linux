@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/bin/python3 /usr/lib/codexbar-linux/codexbar-tray.py "$@"

@@ -1,0 +1,30 @@
+.TH CODEXBAR-LINUX 1 "September 2026" "CodexBar Linux 1.0.0" "User Commands"
+.SH NAME
+codexbar-linux \- native X11 tray for AI coding usage
+.SH SYNOPSIS
+.B codexbar-linux
+.RI [ --popup | --quit | --version ]
+.SH DESCRIPTION
+Starts a single-instance GTK3 tray frontend. Colored bars show remaining quota;
+white shows consumed quota. Provider authentication is managed by the upstream
+CodexBar CLI and provider tools. An X11 desktop with a tray host is required.
+.SH OPTIONS
+.TP
+.B --popup
+Open or close the usage popup.
+.TP
+.B --quit
+Quit the running tray and popup.
+.TP
+.B --version
+Print the frontend version.
+.SH FILES
+Legacy configuration at ~/.codexbar/config.json takes precedence when present.
+New installations use $XDG_CONFIG_HOME/codexbar/config.json. GUI state and cache
+use the codexbar-waybar subdirectory for compatibility.
+.SH ENVIRONMENT
+CODEXBAR_CONFIG overrides the provider configuration path.
+CODEXBAR_BIN overrides the bundled provider CLI executable.
+.SH AUTHORS
+Linux adaptation by Aiden Lyu. Based on steipete/CodexBar and
+Marouan-chak/codexbar-waybar; their MIT licenses are retained.

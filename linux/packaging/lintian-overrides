@@ -1,0 +1,7 @@
+# This distribution intentionally ships the exact checksum-verified upstream
+# static-musl CLI. Retaining it unchanged preserves upstream provenance; we
+# do not relink its vendored libraries or strip its official binary.
+codexbar-linux: statically-linked-binary usr/lib/codexbar-linux/CodexBarCLI
+codexbar-linux: embedded-library curl usr/lib/codexbar-linux/CodexBarCLI
+codexbar-linux: embedded-library zlib usr/lib/codexbar-linux/CodexBarCLI
+codexbar-linux: unstripped-binary-or-object usr/lib/codexbar-linux/CodexBarCLI

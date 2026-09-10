@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=CodexBar Linux
+Comment=Monitor AI coding usage in your desktop panel
+Exec=codexbar-linux --popup
+Icon=codexbar-linux
+Terminal=false
+Categories=Utility;Monitor;
+StartupNotify=false
