@@ -11,7 +11,7 @@ import tempfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '1.0.0'
+VERSION = '1.0.1'
 CLI_VERSION = '0.58.0'
 ASSET = f'CodexBarCLI-v{CLI_VERSION}-linux-musl-x86_64.tar.gz'
 DIGEST = 'c2bc606e6300626d5b2f9ec1948f4ed151a850db97837bd54efa6fdb2b230205'
@@ -70,7 +70,7 @@ def build():
             copy(src,docs/name)
         copy(ROOT/'VALIDATION.md',docs/'VALIDATION.md')
         copy(ROOT/'assets/linux-preview.png',docs/'assets/linux-preview.png')
-        (docs/'changelog.gz').write_bytes(gzip.compress(f'codexbar-linux ({VERSION}) stable; urgency=medium\n\n  * Native GTK3 X11 tray and remaining-quota bars.\n\n -- Aiden Lyu <noreply@github.com>  Thu, 10 Sep 2026 12:00:00 +0000\n'.encode(),mtime=0))
+        (docs/'changelog.gz').write_bytes(gzip.compress(f'codexbar-linux ({VERSION}) stable; urgency=medium\n\n  * Native GTK3 X11 tray and remaining-quota bars.\n\n -- Aiden Lyu <noreply@github.com>  Fri, 11 Sep 2026 12:00:00 +0000\n'.encode(),mtime=0))
         man = stage/'usr/share/man/man1/codexbar-linux.1.gz'
         man.parent.mkdir(parents=True)
         man.write_bytes(gzip.compress((ROOT/'packaging/codexbar-linux.1').read_bytes(),mtime=0))

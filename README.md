@@ -15,7 +15,7 @@ A community Linux GTK3/GDK desktop frontend based on **steipete/CodexBar**, with
 - Validated on Ubuntu 22.04 GNOME X11. Native Wayland is not supported in 1.0.
 
 ```sh
-sudo apt install ./codexbar-linux_1.0.0_amd64.deb
+sudo apt install ./codexbar-linux_1.0.1_amd64.deb
 codexbar-linux
 ```
 

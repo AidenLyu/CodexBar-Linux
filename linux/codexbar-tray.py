@@ -9,7 +9,7 @@ gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gio, GLib
 from codexbar_paths import ROOT, CACHE, STATE_PATH, read_json
 
-VERSION = '1.0.0'
+VERSION = '1.0.1'
 
 class Tray(Gio.Application):
     def __init__(self):

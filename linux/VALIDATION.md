@@ -1,4 +1,4 @@
-# Release 1.0.0 validation
+# Release 1.0.1 validation
 
 Target: Ubuntu 22.04 amd64, GNOME 42, X11, GTK 3.24; two monitors at 2x scaling. CLI: official static-musl CodexBar 0.58.0. Native tests also run in isolated Xvfb/Openbox sessions with private temporary configuration and D-Bus; they do not access developer credentials.
 
@@ -25,7 +25,7 @@ Commands:
 bash tests/run_native.sh                         # four native test programs
 shellcheck -S warning codexbar.sh codexbar-popup-launch.sh packaging/codexbar-linux tests/*.sh
 /usr/bin/python3 packaging/build_deb.py
-lintian dist/codexbar-linux_1.0.0_amd64.deb
+lintian dist/codexbar-linux_1.0.1_amd64.deb
 ```
 
 The official CLI is distributed byte-for-byte from its verified archive. Lintian exceptions for its static linking, embedded curl/zlib and upstream debug symbols are explicitly documented in `packaging/lintian-overrides`; they are distribution choices, not claimed fixes to upstream binaries.

@@ -1,4 +1,4 @@
-# CodexBar Linux 1.0.0
+# CodexBar Linux 1.0.1
 
 Native GTK3/GDK Linux desktop adaptation of **steipete/CodexBar**, with the initial frontend/adapter based on **Marouan-chak/codexbar-waybar**. Both upstream projects and licenses are credited. This is a community port, not an official upstream Linux GUI release.
 
@@ -10,7 +10,7 @@ Download the `.deb` and `SHA256SUMS` into one directory:
 
 ```sh
 sha256sum -c SHA256SUMS
-sudo apt install ./codexbar-linux_1.0.0_amd64.deb
+sudo apt install ./codexbar-linux_1.0.1_amd64.deb
 codexbar-linux
 ```
 
