@@ -20,11 +20,11 @@
 
 Validated on **Ubuntu 22.04, GNOME 42, X11/Xorg, amd64**, with the GNOME AppIndicator tray extension. This version deliberately does not support a native Wayland session. Other X11 desktops may work but are not validated.
 
-Download `codexbar-linux_1.0.1_amd64.deb` and `SHA256SUMS` from Releases:
+Download `codexbar-linux_1.0.2_amd64.deb` and `SHA256SUMS` from Releases:
 
 ```sh
 sha256sum -c SHA256SUMS
-sudo apt install ./codexbar-linux_1.0.1_amd64.deb
+sudo apt install ./codexbar-linux_1.0.2_amd64.deb
 codexbar-linux
 ```
 
@@ -73,6 +73,6 @@ The Linux GUI is implemented using GTK and is not a pixel-identical AppKit/Swift
 
 这是基于 **steipete/CodexBar** 开发的 Linux 原生状态栏版本，界面代码也基于 **Marouan-chak/codexbar-waybar**，保留两个项目的署名和许可证。
 
-当前验证环境：Ubuntu 22.04 / GNOME / X11 / amd64。下载 Release 中的 `.deb` 后使用 `sudo apt install ./codexbar-linux_1.0.1_amd64.deb` 安装。需要先登录自己的服务商账号，再在 Settings 中启用提供商。
+当前验证环境：Ubuntu 22.04 / GNOME / X11 / amd64。下载 Release 中的 `.deb` 后使用 `sudo apt install ./codexbar-linux_1.0.2_amd64.deb` 安装。需要先登录自己的服务商账号，再在 Settings 中启用提供商。
 
 彩色进度条代表剩余用量，白色代表已用用量。点击状态栏图标查看，Esc 或点击外部收起，后台继续运行；Usage details 可展开。安装包自带固定版本的官方 CLI，不包含开发者的账号、缓存或密钥。Wayland 和其他提供商的真实登录流程尚未完成验证，详见功能检查报告。

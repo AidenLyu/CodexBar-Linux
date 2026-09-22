@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] — 2026-09-21
+
+### Fixed
+- Popup no longer jumps to a random spot (seen on single-monitor setups): it is
+  anchored to the click position instead of the unreliable tray-icon geometry,
+  and hugs the top panel of the clicked monitor.
+
+### Added
+- Claude Code usage: Claude is enabled automatically once when
+  `~/.claude/.credentials.json` exists (Session, Weekly and per-model windows),
+  with Claude-orange bars.
+- Smoother popup: fade-in on open, crossfade + animated height when switching
+  tabs/settings, hover transitions, no re-render when a refresh brings no change.
+
 ### Added
 - **Configurable popup default provider.** Settings now includes an **Open
   popup on** picker that persists a provider in

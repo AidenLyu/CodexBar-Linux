@@ -147,7 +147,8 @@ window.codexbar-popup { background: transparent; }
 }
 .codexbar-root button { background-image: none; box-shadow: none; border: none; min-height: 0; min-width: 0; }
 .codexbar-tabbar { padding: 12px 16px 10px; border-bottom: 1px solid #e4e9ee; }
-.codexbar-tab { padding: 7px 10px; border-radius: 8px; color: #687587; background: transparent; }
+.codexbar-tab { padding: 7px 10px; border-radius: 8px; color: #687587; background: transparent;
+    transition: background-color 150ms ease-out, color 150ms ease-out; }
 .codexbar-tab label { font-size: 11px; font-weight: 600; color: inherit; }
 .codexbar-tab:hover { background: #e6ebef; }
 .codexbar-tab.active { color: #136f7c; background: #deeff0; }
@@ -164,7 +165,8 @@ window.codexbar-popup { background: transparent; }
 .codexbar-credits-label { font-size: 11px; color: #748091; }
 .codexbar-error { font-size: 12px; color: #b34a48; }
 .codexbar-footer { padding: 8px 10px; border-top: 1px solid #e1e7ed; }
-.codexbar-footer-btn { padding: 7px 10px; border-radius: 7px; color: #6b7787; background: transparent; }
+.codexbar-footer-btn { padding: 7px 10px; border-radius: 7px; color: #6b7787; background: transparent;
+    transition: background-color 150ms ease-out, color 150ms ease-out; }
 .codexbar-footer-btn label { font-size: 11px; color: inherit; }
 .codexbar-footer-btn:hover { background: #e2edef; color: #176d79; }
 .codexbar-footer-btn:focus { outline: 2px solid #80bac1; outline-offset: -2px; }
@@ -179,6 +181,7 @@ window.codexbar-popup { background: transparent; }
 levelbar.codex-usage { background: transparent; margin: 0 0 4px; }
 levelbar.codex-usage trough { background: transparent; padding: 0; border: none; min-height: 6px; }
 levelbar.codex-usage block.filled { background: #3896a3; border: none; min-height: 6px; border-radius: 3px; }
+levelbar.codex-usage.provider-claude block.filled { background: #d97757; }
 levelbar.codex-usage block.empty { background: #fff; border: 1px solid #dce3e9; min-height: 4px; border-radius: 3px; }
 scrollbar { background: transparent; }
 scrollbar slider { min-width: 4px; min-height: 24px; border: none; border-radius: 3px; background: #c7d3dc; }
@@ -258,8 +261,20 @@ def _safe_int(value: str | None, fallback: int) -> int:
         return fallback
 
 
-_X11_RIGHT_OFFSET = _safe_int(os.environ.get("CODEXBAR_POPUP_X11_RIGHT_OFFSET"), 8)
-_X11_TOP_OFFSET = _safe_int(os.environ.get("CODEXBAR_POPUP_X11_TOP_OFFSET"), 8)
+POPUP_GAP = _safe_int(os.environ.get("CODEXBAR_POPUP_GAP"), 6)
+FADE_MS = 120
+SWITCH_MS = 160
+
+
+def popup_origin(anchor, size, area, gap=POPUP_GAP):
+    """Place the popup on the anchor's monitor work area: centred on the click,
+    hugging the top panel (or the bottom one when clicked in the lower half)."""
+    ax, ay = anchor
+    width, height = size
+    x0, y0, aw, ah = area
+    x = max(x0 + gap, min(ax - width // 2, x0 + aw - width - gap))
+    y = y0 + gap if ay < y0 + ah // 2 else y0 + ah - height - gap
+    return x, max(y0, y)
 
 
 def normalize_reset_description(text: str) -> str:
@@ -601,6 +616,16 @@ def default_provider(data: list, state: dict | None = None) -> str | None:
     pool = healthy or data
     return entry_key(max(pool, key=max_pct))
 
+def enable_detected_claude() -> None:
+    """One-time: turn Claude on when Claude Code is signed in on this machine."""
+    state = load_state()
+    creds = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / ".credentials.json"
+    if state.get("claudeAutoEnabled") or not creds.exists():
+        return
+    save_config({"claude": True})
+    save_state({**state, "claudeAutoEnabled": True})
+
+
 def load_full_config() -> dict:
     # Settings never spawn a CLI or perform network I/O on the GTK thread.
     config = read_json(CONFIG_PATH, dict, {"version": 1, "providers": [{"id": "codex", "enabled": True}]})
@@ -695,6 +720,7 @@ class CodexBarPopup(Gtk.Application):
             action.connect("activate", callback)
             self.add_action(action)
         GLib.timeout_add_seconds(60, self._periodic_refresh)
+        enable_detected_claude()
         self.refresh(background=True)
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, self.quit)
 
@@ -755,20 +781,19 @@ class CodexBarPopup(Gtk.Application):
         # at HiDPI scales. Position before mapping, without opacity/frame polling.
         display = self.window.get_display()
         ax, ay = self.anchor or (0, 28)
-        monitor = display.get_monitor_at_point(ax, ay)
-        bounds = monitor.get_workarea()
+        bounds = display.get_monitor_at_point(ax, ay).get_workarea()
         self.content_scroll.set_max_content_height(max(160, min(720, bounds.height - 220)))
         if self.view == "usage":
             self.active_pid = default_provider(self.data)
-            self.render()
+            self.render(animate=False)
         self.window.get_child().show_all()
         minimum, natural = self.window.get_preferred_size()
         width, height = natural.width, min(natural.height, bounds.height - 8)
-        x = max(bounds.x + 4, min(ax - width + 24, bounds.x + bounds.width - width - 4))
-        y = max(bounds.y, min(ay + 4, bounds.y + bounds.height - height - 4))
+        x, y = popup_origin((ax, ay), (width, height), (bounds.x, bounds.y, bounds.width, bounds.height))
         self.window.realize()
         self.window.resize(width, height)
         self.window.move(x, y)
+        self._fade_in()
         self.window.show()
         self.window.get_window().focus(Gdk.CURRENT_TIME)
         self.window.grab_add()
@@ -778,6 +803,22 @@ class CodexBarPopup(Gtk.Application):
         if status == Gdk.GrabStatus.SUCCESS:
             self.seat = seat
         print("Native popup mapped", (x, y, width, height), flush=True)
+
+    def _fade_in(self):
+        # Opacity needs a compositor (GNOME has one); without it just show.
+        if not self.window.get_screen().is_composited():
+            self.window.set_opacity(1)
+            return
+        self.window.set_opacity(0)
+        start = [None]
+
+        def tick(widget, clock):
+            now = clock.get_frame_time()
+            start[0] = start[0] or now
+            t = min(1.0, (now - start[0]) / (FADE_MS * 1000))
+            widget.set_opacity(1 - (1 - t) ** 3)  # ease-out cubic
+            return t < 1.0
+        self.window.add_tick_callback(tick)
 
     def _make_pill(self, label: str, css_classes: list[str], on_click,
                    *, icon_pid: str | None = None) -> Gtk.Widget:
@@ -830,14 +871,17 @@ class CodexBarPopup(Gtk.Application):
         self.tab_scroll.add(self.tabbar)
         append(root, self.tab_scroll)
 
-        self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
-        add_css_class(self.body, "codexbar-body")
+        # Each render builds a fresh body page; the stack crossfades and
+        # animates the height change, like the macOS menu.
+        self.body = None
+        self.stack = Gtk.Stack(vhomogeneous=False, hhomogeneous=False, interpolate_size=True)
+        self.stack.set_transition_duration(SWITCH_MS)
         self.content_scroll = Gtk.ScrolledWindow()
         self.content_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.content_scroll.set_propagate_natural_height(True)
         self.content_scroll.set_propagate_natural_width(True)
         self.content_scroll.set_max_content_height(720)
-        self.content_scroll.add(self.body)
+        self.content_scroll.add(self.stack)
         append(root, self.content_scroll)
 
         footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
@@ -907,6 +951,8 @@ class CodexBarPopup(Gtk.Application):
 
     def _apply_refresh(self, new_data: list) -> bool:
         self.refreshing = False
+        if new_data == self.data:
+            return False  # nothing changed: no rebuild, no flicker
         self.data = new_data
         if self.active_pid is None or not any(entry_key(e) == self.active_pid for e in new_data):
             self.active_pid = default_provider(new_data)
@@ -914,9 +960,12 @@ class CodexBarPopup(Gtk.Application):
             self.render()
         return False
 
-    def render(self):
+    def render(self, animate: bool = True):
         self._clear(self.tabbar)
-        self._clear(self.body)
+        old = self.body
+        self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        add_css_class(self.body, "codexbar-body")
+        self.stack.add(self.body)
         if self.view == "settings":
             self._render_settings_header()
             self._render_settings_body()
@@ -925,6 +974,12 @@ class CodexBarPopup(Gtk.Application):
             self._render_usage_body()
         self.tabbar.show_all()
         self.body.show_all()
+        visible = animate and self.window is not None and self.window.get_visible()
+        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE if visible
+                                       else Gtk.StackTransitionType.NONE)
+        self.stack.set_visible_child(self.body)
+        if old is not None:
+            GLib.timeout_add(SWITCH_MS + 40 if visible else 0, lambda: old.destroy() or False)
 
     def _render_usage_header(self):
         if not self.data:
@@ -1325,8 +1380,7 @@ class CodexBarPopup(Gtk.Application):
         bar = Gtk.LevelBar()
         add_css_class(bar, "codex-usage")
         active = next((e for e in self.data if entry_key(e) == self.active_pid), {})
-        if active.get("provider") == "codex":
-            add_css_class(bar, "provider-codex")
+        add_css_class(bar, f"provider-{active.get('provider')}")
         bar.set_min_value(0)
         bar.set_max_value(100)
         remaining = remaining_percent(pct) if usage_known else None

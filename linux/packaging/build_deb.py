@@ -11,7 +11,7 @@ import tempfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '1.0.1'
+VERSION = '1.0.2'
 CLI_VERSION = '0.58.0'
 ASSET = f'CodexBarCLI-v{CLI_VERSION}-linux-musl-x86_64.tar.gz'
 DIGEST = 'c2bc606e6300626d5b2f9ec1948f4ed151a850db97837bd54efa6fdb2b230205'

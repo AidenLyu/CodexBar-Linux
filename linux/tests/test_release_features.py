@@ -28,6 +28,25 @@ class ReleaseFeatures(unittest.TestCase):
             self.assertEqual(result['futureOption'],{'keep':True})
             self.assertEqual(path.stat().st_mode & 0o777,0o600)
 
+    def test_popup_origin_single_and_dual_monitor(self):
+        area=(0,27,2560,1413)  # one 5K monitor at scale 2, top panel
+        self.assertEqual(popup.popup_origin((2400,14),(352,376),area),(2202,33))  # clamped at right edge
+        self.assertEqual(popup.popup_origin((1000,14),(352,376),area),(824,33))
+        self.assertEqual(popup.popup_origin((10,1430),(352,376),area)[1],27+1413-376-6)  # bottom panel
+        self.assertEqual(popup.popup_origin((3000,5),(352,376),(2560,0,2560,1440)),(2824,6))  # second monitor
+
+    def test_claude_auto_enabled_once_when_signed_in(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);config=root/'config.json';state=root/'state.json'
+            (root/'.credentials.json').write_text('{}')
+            config.write_text(json.dumps({'version':1,'providers':[{'id':'codex','enabled':True},{'id':'claude','enabled':False}]}))
+            with patch.object(popup,'CONFIG_PATH',config),patch.object(popup,'STATE_PATH',state),patch.dict(os.environ,{'CLAUDE_CONFIG_DIR':tmp}):
+                popup.enable_detected_claude()
+                self.assertEqual([p['enabled'] for p in json.loads(config.read_text())['providers']],[True,True])
+                popup.save_config({'claude':False})
+                popup.enable_detected_claude()  # user turned it off: respect that
+                self.assertFalse(json.loads(config.read_text())['providers'][1]['enabled'])
+
     def test_corrupt_cache_is_safe(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/'last.json'

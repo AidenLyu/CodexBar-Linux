@@ -9,7 +9,7 @@ gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, Gio, GLib
 from codexbar_paths import ROOT, CACHE, STATE_PATH, read_json
 
-VERSION = '1.0.1'
+VERSION = '1.0.2'
 
 class Tray(Gio.Application):
     def __init__(self):
@@ -60,8 +60,11 @@ class Tray(Gio.Application):
 
     def toggle(self, *_):
         self.ensure_popup()
-        ok, _screen, rect, _orientation = self.icon.get_geometry()
-        anchor = (rect.x + rect.width // 2, rect.y + rect.height) if ok else (0, 28)
+        # StatusIcon.get_geometry() reports the XEmbed socket inside gnome-shell,
+        # which is often stale/offscreen (popup jumped around on single-monitor
+        # setups). The pointer is on the icon when it is clicked, so use that.
+        _screen, x, y = self.icon.get_screen().get_display().get_default_seat().get_pointer().get_position()
+        anchor = (x, y)
         if self.actions.has_action('toggle'):
             self.actions.activate_action('toggle', GLib.Variant('(ii)', anchor))
         else:
