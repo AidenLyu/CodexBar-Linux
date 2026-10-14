@@ -35,6 +35,50 @@ class ReleaseFeatures(unittest.TestCase):
         self.assertEqual(popup.popup_origin((10,1430),(352,376),area)[1],27+1413-376-6)  # bottom panel
         self.assertEqual(popup.popup_origin((3000,5),(352,376),(2560,0,2560,1440)),(2824,6))  # second monitor
 
+    def test_tray_bars_follow_remaining_usage(self):
+        import importlib.util, sys
+        sys.modules['gi.repository'].Gio.Application=type('Application',(),{})  # gi is stubbed by the popup loader
+        spec=importlib.util.spec_from_file_location('codexbar_tray',ROOT/'codexbar-tray.py')
+        tray=importlib.util.module_from_spec(spec);spec.loader.exec_module(tray)
+        self.assertEqual(tray.remaining({'primary':{'usedPercent':24}},'primary'),76)
+        self.assertIsNone(tray.remaining({},'primary'))
+        self.assertEqual(tray.tray_level({'primary':{'usedPercent':10},'secondary':{'usedPercent':30}}),70)  # tightest window
+        self.assertEqual(tray.tray_level({'secondary':{'usedPercent':24}}),76)
+        self.assertIsNone(tray.tray_level({}))
+        svg=tray.tray_svg(100,50)
+        self.assertIn('y="5.5" width="15.00"',svg)
+        self.assertIn('y="15.5" width="7.50"',svg)
+        self.assertNotIn('y="5.5"',tray.tray_svg(0,None))  # empty / unknown → outline only
+        self.assertIn('width="3.00"',tray.tray_svg(1,None))  # never thinner than its rounded cap
+        self.assertIn('opacity="0.55" x="4.5" y="5.5"',tray.tray_svg(50,50,(True,False)))  # stale codex dimmed
+        self.assertNotIn('opacity',tray.tray_svg(50,50))
+        self.assertIn('circle',tray.tray_svg(50,50,incident=True))
+
+        events=lambda before,after:[t for t,_ in tray.quota_events(before,after)]
+        self.assertEqual(events({('codex','weekly'):60},{('codex','weekly'):45}),['Codex weekly quota low'])
+        self.assertEqual(events({('codex','weekly'):60},{('codex','weekly'):10}),['Codex weekly quota low'])  # one per jump
+        self.assertEqual(events({('codex','weekly'):45},{('codex','weekly'):40}),[])  # already below
+        self.assertEqual(events({('claude','session'):5},{('claude','session'):0}),['Claude session depleted'])
+        self.assertEqual(events({('claude','session'):0},{('claude','session'):100}),['Claude session restored'])
+        self.assertEqual(events({},{('claude','session'):0}),[])  # first sighting is the baseline
+        self.assertEqual(events({('codex','session'):60},{('codex','session'):None}),[])
+
+    def test_chinese_language(self):
+        import codexbar_i18n
+        self.assertEqual(codexbar_i18n.language({'language':'zh'}),'zh')
+        with patch.dict(os.environ,{'LANGUAGE':'zh_CN:en'}):
+            self.assertEqual(codexbar_i18n.language({}),'zh')
+        self.assertEqual(codexbar_i18n.language({'language':'en'}),'en')
+        with patch.object(codexbar_i18n,'language',lambda: 'zh'):
+            self.assertEqual(codexbar_i18n.t('{pct}% remaining',pct='76'),'剩余 76%')
+            self.assertEqual(popup.format_reset_label({'resetDescription':'Resets in 2h 18m'},'provider'),'重置：2h 18m后')
+            self.assertEqual(codexbar_i18n.t('Not translated'),'Not translated')
+        with patch.object(popup,'language',lambda: 'zh'),patch.object(codexbar_i18n,'language',lambda: 'zh'):
+            label=popup.format_reset_label({'resetDescription':'Oct 20 at 12:58 AM','resetsAt':'2031-10-20T04:58:00Z'},'provider')
+            self.assertTrue(label.startswith('重置：2031年10月20日'),label)
+        self.assertEqual(popup.format_reset_label({'resetDescription':'Resets in 2h 18m'},'provider'),'Resets in 2h 18m')
+        self.assertEqual(popup.format_reset_label({'resetDescription':'7:10 AM'},'provider'),'Resets 7:10 AM')
+
     def test_claude_auto_enabled_once_when_signed_in(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);config=root/'config.json';state=root/'state.json'

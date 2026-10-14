@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] — 2026-10-14
+
+### Added
+- Tray icon bars now show live remaining usage (Codex on top, Claude below, each its tightest window) and drain like a battery, easing smoothly when the level changes.
+- Desktop notifications like macOS: quota left crossing 50% / 20%, session depleted and restored. Toggle in Settings → Notifications.
+- Provider status is fetched; an incident shows a red dot on the tray icon and in the tooltip/popup.
+- A bar dims when it shows cached data after a failed refresh.
+- Popup polish: usage bars ease in on open and between refreshes; amber/red bars and text when 30% / 10% is left; soft drop shadow; follows the desktop dark style; smoother fade-in.
+- Simplified Chinese UI (popup, tray tooltip/menu, notifications). Settings → Language: Auto (follows the system locale), English, 中文.
+
 ## [1.0.2] — 2026-09-21
 
 ### Fixed

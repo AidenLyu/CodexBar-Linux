@@ -155,7 +155,7 @@ ANTIGRAVITY_CREDS="${CODEXBAR_ANTIGRAVITY_CREDS:-${HOME}/.gemini/oauth_creds.jso
 
 fetch_one() {
     local p="$1" src="$2"
-    local args=(usage --provider "$p" --format json --no-color)
+    local args=(usage --provider "$p" --format json --no-color --status)
     [[ -n "$src" ]] && args+=(--source "$src")
     local runner=()
     if [[ "${PROVIDER_TIMEOUT_SECS:-20}" != "0" ]] && command -v timeout >/dev/null 2>&1; then

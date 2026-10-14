@@ -53,6 +53,7 @@ def remaining_percent(used):
     return 100.0 - min(100.0, max(0.0, float(used)))
 
 from codexbar_paths import CODEXBAR, CONFIG_PATH, STATE_PATH, CACHE, ICONS_DIR, read_json, write_json
+from codexbar_i18n import LANGUAGES, language, t
 POPUP_WINDOW_TITLE = os.environ.get("CODEXBAR_POPUP_WINDOW_TITLE", "CodexBar")
 LAST_GOOD = CACHE / "last.json"
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -145,6 +146,10 @@ window.codexbar-popup { background: transparent; }
     color: #243345; background: #f4f6f8;
     border: 1px solid #cfd7df; border-radius: 16px; min-width: 350px;
 }
+.codexbar-root.shadowed {
+    margin: 8px; border-color: rgba(0, 0, 0, 0.10);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.20), 0 1px 3px rgba(0, 0, 0, 0.10);
+}
 .codexbar-root button { background-image: none; box-shadow: none; border: none; min-height: 0; min-width: 0; }
 .codexbar-tabbar { padding: 12px 16px 10px; border-bottom: 1px solid #e4e9ee; }
 .codexbar-tab { padding: 7px 10px; border-radius: 8px; color: #687587; background: transparent;
@@ -180,12 +185,61 @@ window.codexbar-popup { background: transparent; }
 .codexbar-details-box { padding: 8px 0; }
 levelbar.codex-usage { background: transparent; margin: 0 0 4px; }
 levelbar.codex-usage trough { background: transparent; padding: 0; border: none; min-height: 6px; }
-levelbar.codex-usage block.filled { background: #3896a3; border: none; min-height: 6px; border-radius: 3px; }
+levelbar.codex-usage block.filled { background: #3896a3; border: none; min-height: 6px; border-radius: 3px;
+    transition: background-color 300ms ease-out; }
 levelbar.codex-usage.provider-claude block.filled { background: #d97757; }
+levelbar.codex-usage.warning block.filled { background: #e0a030; }
+levelbar.codex-usage.critical block.filled { background: #e5534b; }
+.codexbar-section-detail-left.warning { color: #b7791f; }
+.codexbar-section-detail-left.critical { color: #d1453b; }
 levelbar.codex-usage block.empty { background: #fff; border: 1px solid #dce3e9; min-height: 4px; border-radius: 3px; }
 scrollbar { background: transparent; }
 scrollbar slider { min-width: 4px; min-height: 24px; border: none; border-radius: 3px; background: #c7d3dc; }
+
+/* Dark appearance, following the desktop's dark style preference. */
+.codexbar-root.dark { color: #e3e9ef; background: #1f2328; border-color: #353c45; }
+.codexbar-root.dark.shadowed { border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.30); }
+.dark .codexbar-tabbar, .dark .codexbar-settings-row { border-color: #2e343c; }
+.dark .codexbar-footer { border-top-color: #2e343c; }
+.dark .codexbar-tab, .dark .codexbar-footer-btn { color: #98a3b0; }
+.dark .codexbar-tab:hover { background: #2a3038; }
+.dark .codexbar-tab.active { color: #6fd0da; background: #1d3a3e; }
+.dark .codexbar-footer-btn:hover { background: #20363a; color: #6fd0da; }
+.dark .codexbar-provider-title, .dark .codexbar-credits { color: #f1f4f7; }
+.dark .codexbar-subtitle, .dark .codexbar-plan, .dark .codexbar-credits-label,
+.dark .codexbar-section-detail-right, .dark .codexbar-details { color: #8d98a5; }
+.dark .codexbar-divider { background: #2e343c; }
+.dark .codexbar-metric { background: #262b31; border-color: #333a43; }
+.dark .codexbar-section-title { color: #dbe2ea; }
+.dark .codexbar-section-detail-left { color: #6fd0da; }
+.dark .codexbar-section-detail-left.warning { color: #e8b04a; }
+.dark .codexbar-section-detail-left.critical { color: #ff7b72; }
+.dark .codexbar-error { color: #ff7b72; }
+.dark levelbar.codex-usage block.empty { background: #181b20; border-color: #3a424c; }
+.dark scrollbar slider { background: #3d4650; }
 """
+
+
+def prefers_dark(settings) -> bool:
+    """GNOME's color-scheme (or a *-dark GTK theme) asks for dark apps."""
+    if settings is None:
+        return False
+    keys = settings.list_keys()
+    if "color-scheme" in keys and settings.get_string("color-scheme") == "prefer-dark":
+        return True
+    return "gtk-theme" in keys and settings.get_string("gtk-theme").lower().endswith("dark")
+
+
+def interface_settings():
+    source = Gio.SettingsSchemaSource.get_default()
+    if source and source.lookup("org.gnome.desktop.interface", True):
+        return Gio.Settings.new("org.gnome.desktop.interface")
+    return None
+
+
+def ease_out(frac: float) -> float:
+    return 1 - (1 - frac) ** 3
 
 
 def load_cached() -> list:
@@ -203,35 +257,36 @@ def save_state(state: dict) -> None:
 _ICON_CACHE: dict[str, Path] = {}
 
 
-def resolve_icon_path(pid: str) -> Path | None:
+def resolve_icon_path(pid: str, dark: bool = False) -> Path | None:
     """Return a recoloured copy of the provider SVG (dark text colour) so it
     renders against the popup's light background. Upstream SVGs use
     `fill=\"white\"`; we substitute that with our theme dark and cache."""
     name = PROVIDER_ICON_ALIAS.get(pid, pid)
-    if name in _ICON_CACHE:
-        return _ICON_CACHE[name]
+    ink = "#e3e9ef" if dark else "#1c1c1e"
+    if (name, dark) in _ICON_CACHE:
+        return _ICON_CACHE[(name, dark)]
     src = ICONS_DIR / f"ProviderIcon-{name}.svg"
     if not src.exists():
         return None
     out_dir = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "codexbar-waybar" / "icons"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / f"{name}.svg"
+    out = out_dir / f"{name}{'-dark' if dark else ''}.svg"
     try:
         svg = src.read_text()
         # Recolour mask-style SVGs (single white path) to dark theme text.
-        recoloured = svg.replace('fill="white"', 'fill="#1c1c1e"') \
-                        .replace("fill='white'", "fill='#1c1c1e'") \
-                        .replace('fill="#ffffff"', 'fill="#1c1c1e"') \
-                        .replace('fill="#FFFFFF"', 'fill="#1c1c1e"')
+        recoloured = svg.replace('fill="white"', f'fill="{ink}"') \
+                        .replace("fill='white'", f"fill='{ink}'") \
+                        .replace('fill="#ffffff"', f'fill="{ink}"') \
+                        .replace('fill="#FFFFFF"', f'fill="{ink}"')
         out.write_text(recoloured)
-        _ICON_CACHE[name] = out
+        _ICON_CACHE[(name, dark)] = out
         return out
     except OSError:
         return None
 
 
-def make_icon(pid: str, size: int = 18) -> Gtk.Widget | None:
-    path = resolve_icon_path(pid)
+def make_icon(pid: str, size: int = 18, dark: bool = False) -> Gtk.Widget | None:
+    path = resolve_icon_path(pid, dark)
     if path is None:
         return None
     # Let GTK render the SVG at the widget's scale; no custom Cairo surfaces.
@@ -262,7 +317,9 @@ def _safe_int(value: str | None, fallback: int) -> int:
 
 
 POPUP_GAP = _safe_int(os.environ.get("CODEXBAR_POPUP_GAP"), 6)
-FADE_MS = 120
+FADE_MS = 160
+BAR_MS = 450
+SHADOW = 8  # .shadowed margin: the card sits this far inside the window
 SWITCH_MS = 160
 
 
@@ -305,7 +362,11 @@ def current_reset_format(state: dict | None = None) -> str:
 def _from_description(desc: str) -> str:
     if not desc:
         return ""
-    return desc if _RESET_STARTS_WITH_RESETS.match(desc) else f"Resets {desc}"
+    if _RESET_STARTS_WITH_RESETS.match(desc):
+        desc = desc.split(None, 1)[1] if " " in desc else ""
+    if desc.startswith("in "):
+        desc = t("in {span}", span=desc[3:])
+    return t("Resets {when}", when=desc) if desc else ""
 
 
 def format_reset_label(window: dict, mode: str) -> str:
@@ -318,8 +379,8 @@ def format_reset_label(window: dict, mode: str) -> str:
     """
     clean = normalize_reset_description(window.get("resetDescription") or "")
     from_desc = _from_description(clean)
-    if mode == "provider":
-        return from_desc
+    if mode == "provider" and language() != "zh":
+        return from_desc  # Chinese falls through to local time: provider dates are English
     if _RESET_RELATIVE.match(clean):
         return from_desc
     resets_at = window.get("resetsAt")
@@ -335,14 +396,18 @@ def format_reset_label(window: dict, mode: str) -> str:
     else:
         ts = ts.astimezone()
         tz_suffix = ts.tzname() or ""
+    return t("Resets {when}", when=f"{format_timestamp(ts)} {tz_suffix}".rstrip())
+
+
+def format_timestamp(ts: datetime.datetime) -> str:
+    """Today → time only; this year → month/day + time; else with the year."""
     now = datetime.datetime.now(ts.tzinfo)
+    zh = language() == "zh"
     if ts.date() == now.date():
-        body = ts.strftime("%-I:%M %p")
-    elif ts.year == now.year:
-        body = ts.strftime("%b %-d at %-I:%M %p")
-    else:
-        body = ts.strftime("%b %-d %Y at %-I:%M %p")
-    return f"Resets {body} {tz_suffix}".rstrip()
+        return ts.strftime("%H:%M" if zh else "%-I:%M %p")
+    if ts.year == now.year:
+        return ts.strftime("%-m月%-d日 %H:%M" if zh else "%b %-d at %-I:%M %p")
+    return ts.strftime("%Y年%-m月%-d日 %H:%M" if zh else "%b %-d %Y at %-I:%M %p")
 
 
 def fetch_fresh() -> list:
@@ -430,12 +495,7 @@ def format_datetime_label(value: str | None) -> str:
     if ts is None:
         return ""
     ts = ts.astimezone()
-    now = datetime.datetime.now(ts.tzinfo)
-    if ts.date() == now.date():
-        return ts.strftime("%-I:%M %p %Z")
-    if ts.year == now.year:
-        return ts.strftime("%b %-d at %-I:%M %p %Z")
-    return ts.strftime("%b %-d %Y at %-I:%M %p %Z")
+    return f"{format_timestamp(ts)} {ts.strftime('%Z')}".rstrip()
 
 
 def summarize_status(entry: dict) -> str | None:
@@ -444,9 +504,9 @@ def summarize_status(entry: dict) -> str | None:
         return None
     indicator = status.get("indicator")
     description = status.get("description")
-    if not indicator and not description:
-        return None
-    label = str(indicator or "unknown").replace("_", " ").title()
+    if indicator == "none" or not indicator and not description:
+        return None  # operational: keep the "Updated" line
+    label = t(str(indicator or "unknown").replace("_", " ").title())
     return f"{label}: {description}" if description else label
 
 
@@ -458,7 +518,7 @@ def summarize_pace(entry: dict) -> list[str]:
     for key, title in (("primary", "Session pace"), ("secondary", "Weekly pace")):
         data = pace.get(key)
         if isinstance(data, dict) and data.get("summary"):
-            lines.append(f"{title}: {data['summary']}")
+            lines.append(f"{t(title)}: {data['summary']}")
     return lines
 
 
@@ -469,11 +529,11 @@ def summarize_provider_cost(usage: dict) -> str | None:
     used = cost.get("used")
     limit = cost.get("limit")
     currency = str(cost.get("currencyCode") or "USD")
-    period = cost.get("period") or "Budget"
+    period = cost.get("period") or t("Budget")
     if isinstance(used, (int, float)) and isinstance(limit, (int, float)) and limit > 0:
         return f"{period}: {money(float(used), currency)} / {money(float(limit), currency)}"
     if isinstance(used, (int, float)):
-        return f"{period}: {money(float(used), currency)} used"
+        return t("{period}: {used} used", period=period, used=money(float(used), currency))
     return None
 
 
@@ -493,23 +553,23 @@ def summarize_reset_credits(usage: dict) -> str | None:
     if expiring:
         expiry = format_datetime_label(expiring[0].get("expires_at"))
         if expiry:
-            return f"{count} available; next expires {expiry}"
+            return t("{count} available; next expires {when}", count=count, when=expiry)
     if count:
-        return f"{count} available; no expiry"
-    return "None available"
+        return t("{count} available; no expiry", count=count)
+    return t("None available")
 
 
 def summarize_credit_limit(limit: dict | None) -> str | None:
     if not isinstance(limit, dict):
         return None
-    title = limit.get("title") or "Monthly credit limit"
+    title = limit.get("title") or t("Monthly credit limit")
     used = limit.get("used")
     cap = limit.get("limit")
     remaining = limit.get("remaining")
     if isinstance(used, (int, float)) and isinstance(cap, (int, float)) and cap > 0:
         return f"{title}: {money(float(used))} / {money(float(cap))}"
     if isinstance(remaining, (int, float)):
-        return f"{title}: {money(float(remaining))} remaining"
+        return t("{title}: {amount} remaining", title=title, amount=money(float(remaining)))
     return None
 
 
@@ -520,10 +580,10 @@ def summarize_openai_dashboard(entry: dict) -> list[str]:
     lines: list[str] = []
     account_plan = dashboard.get("accountPlan")
     if account_plan:
-        lines.append(f"Plan: {account_plan}")
+        lines.append(t("Plan: {plan}", plan=account_plan))
     credits = dashboard.get("creditsRemaining")
     if isinstance(credits, (int, float)):
-        lines.append(f"Dashboard credits: {money(float(credits))}")
+        lines.append(t("Dashboard credits: {amount}", amount=money(float(credits))))
     limit = summarize_credit_limit(dashboard.get("codexCreditLimit"))
     if limit:
         lines.append(limit)
@@ -536,7 +596,7 @@ def summarize_openai_dashboard(entry: dict) -> list[str]:
             if isinstance(day, dict) and isinstance(day.get("totalCreditsUsed"), (int, float))
         )
         if total > 0:
-            lines.append(f"Recent dashboard spend: {money(total)} over {len(recent)} days")
+            lines.append(t("Recent dashboard spend: {amount} over {days} days", amount=money(total), days=len(recent)))
     return lines
 
 
@@ -551,9 +611,9 @@ def summarize_usage_details(usage: dict) -> list[str]:
         balance = openrouter.get("balance")
         total_usage = openrouter.get("totalUsage")
         if isinstance(balance, (int, float)):
-            text = f"OpenRouter balance: {money(float(balance))}"
+            text = t("OpenRouter balance: {amount}", amount=money(float(balance)))
             if isinstance(total_usage, (int, float)):
-                text += f" ({money(float(total_usage))} used)"
+                text += t(" ({amount} used)", amount=money(float(total_usage)))
             lines.append(text)
 
     sakana = usage.get("sakanaPayAsYouGo")
@@ -561,9 +621,9 @@ def summarize_usage_details(usage: dict) -> list[str]:
         balance = sakana.get("creditBalance")
         total = sakana.get("periodUsageTotal")
         if isinstance(balance, (int, float)):
-            text = f"Pay-as-you-go balance: {money(float(balance))}"
+            text = t("Pay-as-you-go balance: {amount}", amount=money(float(balance)))
             if isinstance(total, (int, float)):
-                text += f"; {money(float(total))} used"
+                text += t("; {amount} used", amount=money(float(total)))
             lines.append(text)
 
     openai_api = usage.get("openAIAPIUsage")
@@ -580,23 +640,23 @@ def summarize_usage_details(usage: dict) -> list[str]:
                 for day in daily
                 if isinstance(day, dict) and isinstance(day.get("requests"), int)
             )
-            lines.append(f"API history: {money(total_cost)} across {requests:,} requests")
+            lines.append(t("API history: {amount} across {requests} requests", amount=money(total_cost), requests=f"{requests:,}"))
 
     reset_credits = summarize_reset_credits(usage)
     if reset_credits:
-        lines.append(f"Reset credits: {reset_credits}")
+        lines.append(t("Reset credits: {summary}", summary=reset_credits))
 
     if usage.get("commandCodeSubscriptionEnrichmentUnavailable"):
-        lines.append("Subscription lookup unavailable")
+        lines.append(t("Subscription lookup unavailable"))
     if usage.get("commandCodeMonthlyGrantDepleted"):
-        lines.append("Monthly grant depleted")
+        lines.append(t("Monthly grant depleted"))
 
     expires = format_datetime_label(usage.get("subscriptionExpiresAt"))
     renews = format_datetime_label(usage.get("subscriptionRenewsAt"))
     if renews:
-        lines.append(f"Subscription renews {renews}")
+        lines.append(t("Subscription renews {when}", when=renews))
     elif expires:
-        lines.append(f"Subscription expires {expires}")
+        lines.append(t("Subscription expires {when}", when=expires))
     return lines
 
 
@@ -703,6 +763,11 @@ class CodexBarPopup(Gtk.Application):
         self.view: str = "usage"             # "usage" | "settings"
         self.settings_switches: dict[str, Gtk.Switch] = {}
         self.expanded_details = set()
+        self.new_bars = []  # (bar, key, target) built by the current render
+        self.bar_levels = {}  # key -> last shown remaining %, so bars ease from it
+        self.bar_tween = None
+        self.shadowed = False
+        self.dark = False
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
@@ -762,7 +827,8 @@ class CodexBarPopup(Gtk.Application):
     def _outside_click(self, _win, event):
         x, y = self.window.get_position()
         width, height = self.window.get_size()
-        if not (x <= event.x_root < x + width and y <= event.y_root < y + height):
+        m = SHADOW if self.shadowed else 0  # a click on the shadow is outside the card
+        if not (x + m <= event.x_root < x + width - m and y + m <= event.y_root < y + height - m):
             return self.hide_window()
         return False
 
@@ -783,13 +849,15 @@ class CodexBarPopup(Gtk.Application):
         ax, ay = self.anchor or (0, 28)
         bounds = display.get_monitor_at_point(ax, ay).get_workarea()
         self.content_scroll.set_max_content_height(max(160, min(720, bounds.height - 220)))
+        self.bar_levels.clear()  # bars fill up from empty on open
         if self.view == "usage":
             self.active_pid = default_provider(self.data)
             self.render(animate=False)
         self.window.get_child().show_all()
         minimum, natural = self.window.get_preferred_size()
         width, height = natural.width, min(natural.height, bounds.height - 8)
-        x, y = popup_origin((ax, ay), (width, height), (bounds.x, bounds.y, bounds.width, bounds.height))
+        gap = max(0, POPUP_GAP - SHADOW) if self.shadowed else POPUP_GAP
+        x, y = popup_origin((ax, ay), (width, height), (bounds.x, bounds.y, bounds.width, bounds.height), gap)
         self.window.realize()
         self.window.resize(width, height)
         self.window.move(x, y)
@@ -815,9 +883,9 @@ class CodexBarPopup(Gtk.Application):
         def tick(widget, clock):
             now = clock.get_frame_time()
             start[0] = start[0] or now
-            t = min(1.0, (now - start[0]) / (FADE_MS * 1000))
-            widget.set_opacity(1 - (1 - t) ** 3)  # ease-out cubic
-            return t < 1.0
+            frac = min(1.0, (now - start[0]) / (FADE_MS * 1000))
+            widget.set_opacity(ease_out(frac))
+            return frac < 1.0
         self.window.add_tick_callback(tick)
 
     def _make_pill(self, label: str, css_classes: list[str], on_click,
@@ -826,7 +894,7 @@ class CodexBarPopup(Gtk.Application):
         Gtk.Button styling. Optionally prefixes a provider SVG icon."""
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=3)
         if icon_pid:
-            icon = make_icon(icon_pid, size=16)
+            icon = make_icon(icon_pid, size=16, dark=self.dark)
             if icon is not None:
                 append(box, icon)
         lbl = Gtk.Label(label=label)
@@ -861,6 +929,21 @@ class CodexBarPopup(Gtk.Application):
 
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         add_css_class(root, "codexbar-root")
+        self.shadowed = visual is not None and win.get_screen().is_composited()
+        if self.shadowed:
+            add_css_class(root, "shadowed")
+        self.interface = interface_settings()
+        def apply_theme(*_):
+            dark = prefers_dark(self.interface)
+            context = root.get_style_context()
+            (context.add_class if dark else context.remove_class)("dark")
+            if dark != self.dark:
+                self.dark = dark
+                if getattr(self, "body", None) is not None:
+                    self.render()  # provider icons are recoloured per theme
+        apply_theme()
+        if self.interface is not None:
+            self.interface.connect("changed", apply_theme)
         win.add(root)
 
         self.tabbar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
@@ -884,18 +967,9 @@ class CodexBarPopup(Gtk.Application):
         self.content_scroll.add(self.stack)
         append(root, self.content_scroll)
 
-        footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
-        add_css_class(footer, "codexbar-footer")
-        for label, callback in [
-            ("Refresh", lambda: self.refresh(background=True)),
-            ("Settings…", self._on_settings_call),
-            ("About", self._on_about_call),
-            ("Quit", self.quit_all),
-        ]:
-            row = self._make_pill(label, ["codexbar-footer-btn"], callback)
-            row.set_hexpand(True)
-            append(footer, row)
-        append(root, footer)
+        self.footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
+        add_css_class(self.footer, "codexbar-footer")
+        append(root, self.footer)
 
         self.data = load_cached()
         self.active_pid = default_provider(self.data)
@@ -960,7 +1034,22 @@ class CodexBarPopup(Gtk.Application):
             self.render()
         return False
 
+    def _render_footer(self):
+        self._clear(self.footer)
+        for label, callback in [
+            ("Refresh", lambda: self.refresh(background=True)),
+            ("Settings…", self._on_settings_call),
+            ("About", self._on_about_call),
+            ("Quit", self.quit_all),
+        ]:
+            row = self._make_pill(t(label), ["codexbar-footer-btn"], callback)
+            row.set_hexpand(True)
+            append(self.footer, row)
+        self.footer.show_all()
+
     def render(self, animate: bool = True):
+        self.new_bars = []
+        self._render_footer()
         self._clear(self.tabbar)
         old = self.body
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
@@ -978,8 +1067,35 @@ class CodexBarPopup(Gtk.Application):
         self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE if visible
                                        else Gtk.StackTransitionType.NONE)
         self.stack.set_visible_child(self.body)
+        self._animate_bars()
         if old is not None:
             GLib.timeout_add(SWITCH_MS + 40 if visible else 0, lambda: old.destroy() or False)
+
+    def _animate_bars(self):
+        """Ease each new bar from the level it last showed (empty on open) to its value."""
+        moves = []
+        for bar, key, target in self.new_bars:
+            start = self.bar_levels.get(key, 0.0)
+            self.bar_levels[key] = target
+            if start != target:
+                bar.set_value(start)
+                moves.append((bar, start, target))
+        if self.bar_tween:
+            GLib.source_remove(self.bar_tween)
+            self.bar_tween = None
+        if not moves:
+            return
+        began = time.monotonic()
+
+        def step():
+            frac = min(1.0, (time.monotonic() - began) * 1000 / BAR_MS)
+            for bar, start, target in moves:
+                bar.set_value(start + (target - start) * ease_out(frac))
+            if frac < 1.0:
+                return True
+            self.bar_tween = None
+            return False
+        self.bar_tween = GLib.timeout_add(16, step)
 
     def _render_usage_header(self):
         if not self.data:
@@ -1003,7 +1119,7 @@ class CodexBarPopup(Gtk.Application):
 
     def _render_usage_body(self):
         if not self.data:
-            append(self.body, Gtk.Label(label="No usage data yet. Enable a provider in Settings, sign in with its CLI, then Refresh.", wrap=True, max_width_chars=38, xalign=0))
+            append(self.body, Gtk.Label(label=t("No usage data yet. Enable a provider in Settings, sign in with its CLI, then Refresh."), wrap=True, max_width_chars=38, xalign=0))
             return
         active = next((e for e in self.data if entry_key(e) == self.active_pid), None)
         if active is None:
@@ -1011,12 +1127,12 @@ class CodexBarPopup(Gtk.Application):
         self._render_provider(active)
 
     def _render_settings_header(self):
-        back = self._make_pill("← Back", ["codexbar-tab"], self._on_settings_back)
+        back = self._make_pill(t("← Back"), ["codexbar-tab"], self._on_settings_back)
         append(self.tabbar, back)
-        title = Gtk.Label(label="Settings", xalign=0.0, hexpand=True)
+        title = Gtk.Label(label=t("Settings"), xalign=0.0, hexpand=True)
         add_css_class(title, "codexbar-settings-title")
         append(self.tabbar, title)
-        save = self._make_pill("Save", ["codexbar-tab", "active"], self._on_settings_save)
+        save = self._make_pill(t("Save"), ["codexbar-tab", "active"], self._on_settings_save)
         append(self.tabbar, save)
 
     def _render_settings_body(self):
@@ -1026,12 +1142,22 @@ class CodexBarPopup(Gtk.Application):
         existing = {p.get("id"): bool(p.get("enabled")) for p in cfg.get("providers", [])}
         existing.update(pending)
 
+        # --- Section: UI language ---
+        lang_title = Gtk.Label(label=t("Language"), xalign=0.0)
+        add_css_class(lang_title, "codexbar-section-title")
+        append(self.body, lang_title)
+        lang_hint = Gtk.Label(label=t("Auto follows the system language."), xalign=0.0, wrap=True, max_width_chars=44)
+        add_css_class(lang_hint, "codexbar-subtitle")
+        append(self.body, lang_hint)
+        append(self.body, self._build_language_picker())
+        append(self.body, self._divider())
+
         # --- Section: which provider shows in the bar ---
-        bar_title = Gtk.Label(label="Tray tooltip", xalign=0.0)
+        bar_title = Gtk.Label(label=t("Tray tooltip"), xalign=0.0)
         add_css_class(bar_title, "codexbar-section-title")
         append(self.body, bar_title)
         bar_hint = Gtk.Label(
-            label="Pick a provider for the tray tooltip, or leave on Highest to show all.",
+            label=t("Pick a provider for the tray tooltip, or leave on Highest to show all."),
             xalign=0.0, wrap=True, max_width_chars=44)
         add_css_class(bar_hint, "codexbar-subtitle")
         append(self.body, bar_hint)
@@ -1039,11 +1165,11 @@ class CodexBarPopup(Gtk.Application):
         append(self.body, self._divider())
 
         # --- Section: which provider is selected when the popup opens ---
-        popup_title = Gtk.Label(label="Open popup on", xalign=0.0)
+        popup_title = Gtk.Label(label=t("Open popup on"), xalign=0.0)
         add_css_class(popup_title, "codexbar-section-title")
         append(self.body, popup_title)
         popup_hint = Gtk.Label(
-            label="Choose the provider tab selected when the popup opens, or use Highest.",
+            label=t("Choose the provider tab selected when the popup opens, or use Highest."),
             xalign=0.0, wrap=True, max_width_chars=44)
         add_css_class(popup_hint, "codexbar-subtitle")
         append(self.body, popup_hint)
@@ -1053,28 +1179,40 @@ class CodexBarPopup(Gtk.Application):
         append(self.body, self._divider())
 
         # --- Section: reset time format ---
-        reset_title = Gtk.Label(label="Reset times", xalign=0.0)
+        reset_title = Gtk.Label(label=t("Reset times"), xalign=0.0)
         add_css_class(reset_title, "codexbar-section-title")
         append(self.body, reset_title)
         reset_hint = Gtk.Label(
-            label="How to render the “Resets …” label. Provider keeps the raw "
-                  "string each backend emits; Local/UTC reformat the reset "
-                  "timestamp with an explicit timezone.",
+            label=t("How to render the “Resets …” label. Provider keeps the raw string each backend emits; "
+                    "Local/UTC reformat the reset timestamp with an explicit timezone."),
             xalign=0.0, wrap=True, max_width_chars=44)
         add_css_class(reset_hint, "codexbar-subtitle")
         append(self.body, reset_hint)
         append(self.body, self._build_reset_format_picker())
 
+        append(self.body, self._divider())
+
+        # --- Section: quota notifications (sent by the tray) ---
+        notify_title = Gtk.Label(label=t("Notifications"), xalign=0.0)
+        add_css_class(notify_title, "codexbar-section-title")
+        append(self.body, notify_title)
+        notify_hint = Gtk.Label(
+            label=t("Notify when quota left drops below 50% and 20%, runs out, or comes back."),
+            xalign=0.0, wrap=True, max_width_chars=44)
+        add_css_class(notify_hint, "codexbar-subtitle")
+        append(self.body, notify_hint)
+        append(self.body, self._build_notifications_picker())
+
         # Divider between sections.
         append(self.body, self._divider())
 
         # --- Section: enabled providers ---
-        section_title = Gtk.Label(label="Providers", xalign=0.0)
+        section_title = Gtk.Label(label=t("Providers"), xalign=0.0)
         add_css_class(section_title, "codexbar-section-title")
         append(self.body, section_title)
         section_hint = Gtk.Label(
-            label="Toggle which providers feed the bar and the popup.",
-            xalign=0.0, wrap=True)
+            label=t("Toggle which providers feed the bar and the popup."),
+            xalign=0.0, wrap=True, max_width_chars=44)
         add_css_class(section_hint, "codexbar-subtitle")
         append(self.body, section_hint)
 
@@ -1098,8 +1236,8 @@ class CodexBarPopup(Gtk.Application):
 
         # Footer note.
         note = Gtk.Label(
-            label=f"Config: {CONFIG_PATH}",
-            xalign=0.0, wrap=True)
+            label=t("Config: {path}", path=CONFIG_PATH),
+            xalign=0.0, wrap=True, max_width_chars=44)
         add_css_class(note, "codexbar-subtitle")
         append(self.body, note)
 
@@ -1120,7 +1258,7 @@ class CodexBarPopup(Gtk.Application):
                 lambda p=pid: on_change(p),
                 icon_pid=pid)
 
-        append(wrap, make_chip(None, "Highest"))
+        append(wrap, make_chip(None, t("Highest")))
         enabled_pids = [pid for pid, enabled in existing.items() if enabled]
         for pid in enabled_pids:
             append(wrap, make_chip(pid, provider_label(pid)))
@@ -1172,9 +1310,44 @@ class CodexBarPopup(Gtk.Application):
             if value == current:
                 classes.append("active")
             append(wrap, self._make_pill(
-                label, classes,
+                t(label), classes,
                 lambda v=value: self._on_reset_format_change(v)))
         return wrap
+
+    def _build_language_picker(self) -> Gtk.Widget:
+        wrap = Gtk.FlowBox()
+        add_css_class(wrap, "codexbar-bar-picker")
+        wrap.set_selection_mode(Gtk.SelectionMode.NONE)
+        current = load_state().get("language", "auto")
+        for value, label in LANGUAGES:
+            classes = ["codexbar-tab", "active"] if value == current else ["codexbar-tab"]
+            append(wrap, self._make_pill(t(label), classes, lambda v=value: self._on_language_change(v)))
+        return wrap
+
+    def _on_language_change(self, value: str):
+        state = load_state()
+        if value == "auto":
+            state.pop("language", None)
+        else:
+            state["language"] = value
+        save_state(state)
+        self.render()
+
+    def _build_notifications_picker(self) -> Gtk.Widget:
+        wrap = Gtk.FlowBox()
+        add_css_class(wrap, "codexbar-bar-picker")
+        wrap.set_selection_mode(Gtk.SelectionMode.NONE)
+        current = load_state().get("notifications", True)
+        for value, label in ((True, "On"), (False, "Off")):
+            classes = ["codexbar-tab", "active"] if value == current else ["codexbar-tab"]
+            append(wrap, self._make_pill(t(label), classes, lambda v=value: self._on_notifications_change(v)))
+        return wrap
+
+    def _on_notifications_change(self, value: bool):
+        state = load_state()
+        state["notifications"] = value
+        save_state(state)
+        self.render()
 
     def _on_reset_format_change(self, value: str):
         state = load_state()
@@ -1195,7 +1368,7 @@ class CodexBarPopup(Gtk.Application):
         if not enabled_ui:
             add_css_class(row, "disabled")
 
-        icon = make_icon(pid, size=18)
+        icon = make_icon(pid, size=18, dark=self.dark)
         if icon is not None:
             append(row, icon)
 
@@ -1204,7 +1377,7 @@ class CodexBarPopup(Gtk.Application):
         append(row, name)
 
         if not enabled_ui:
-            hint = Gtk.Label(label="macOS only", xalign=1.0)
+            hint = Gtk.Label(label=t("macOS only"), xalign=1.0)
             add_css_class(hint, "codexbar-settings-hint")
             append(row, hint)
 
@@ -1243,11 +1416,11 @@ class CodexBarPopup(Gtk.Application):
         append(self.body, header)
 
         # Subtitle line (status / updated / stale).
-        sub_text = "Updated just now"
+        sub_text = t("Updated just now")
         if entry.get("stale"):
-            sub_text = "Cached — last refresh failed"
+            sub_text = t("Cached — last refresh failed")
         elif entry.get("error"):
-            sub_text = "Refresh failed"
+            sub_text = t("Refresh failed")
         else:
             status_text = summarize_status(entry)
             if status_text:
@@ -1265,7 +1438,7 @@ class CodexBarPopup(Gtk.Application):
         if entry.get("error"):
             append(self.body, self._divider())
             err = Gtk.Label(
-                label=entry["error"].get("message", "Unknown error"),
+                label=entry["error"].get("message") or t("Unknown error"),
                 xalign=0.0,
                 wrap=True,
                 max_width_chars=44)
@@ -1281,7 +1454,7 @@ class CodexBarPopup(Gtk.Application):
             window = usage.get(key)
             if not window:
                 continue
-            append(self.body, self._section(WINDOW_LABELS.get(key, key.title()), window))
+            append(self.body, self._section(t(WINDOW_LABELS.get(key, key.title())), window))
             rendered_any = True
 
         for item in usage.get("extraRateWindows") or []:
@@ -1290,7 +1463,7 @@ class CodexBarPopup(Gtk.Application):
             window = item.get("window")
             if not isinstance(window, dict):
                 continue
-            title = item.get("title") or item.get("id") or "Extra quota"
+            title = item.get("title") or item.get("id") or t("Extra quota")
             append(self.body, self._section(str(title), window, usage_known=item.get("usageKnown", True)))
             rendered_any = True
 
@@ -1299,13 +1472,13 @@ class CodexBarPopup(Gtk.Application):
         remaining = credits.get("remaining")
         credit_lines = []
         if isinstance(remaining, (int, float)):
-            credit_lines.append((money(float(remaining)), "remaining"))
+            credit_lines.append((money(float(remaining)), t("remaining")))
         limit_line = summarize_credit_limit(credits.get("codexCreditLimit"))
         if limit_line:
             credit_lines.append((limit_line, ""))
         if credit_lines:
             append(self.body, self._divider())
-            credit_title = Gtk.Label(label="Credits", xalign=0.0)
+            credit_title = Gtk.Label(label=t("Credits"), xalign=0.0)
             add_css_class(credit_title, "codexbar-section-title")
             append(self.body, credit_title)
             for value, label in credit_lines:
@@ -1334,10 +1507,10 @@ class CodexBarPopup(Gtk.Application):
                 or plan_info.get("planName")
             )
             if plan:
-                detail_lines.append(f"Plan: {plan}")
+                detail_lines.append(t("Plan: {plan}", plan=plan))
         if detail_lines:
             append(self.body, self._divider())
-            expander = Gtk.Expander(label="Usage details")
+            expander = Gtk.Expander(label=t("Usage details"))
             detail_key = entry_key(entry)
             expander.set_expanded(detail_key in self.expanded_details)
             expander.connect("notify::expanded", self._details_changed, detail_key)
@@ -1354,7 +1527,7 @@ class CodexBarPopup(Gtk.Application):
 
         if not rendered_any:
             append(self.body, self._divider())
-            empty = Gtk.Label(label="No usage data for this provider.", xalign=0.0)
+            empty = Gtk.Label(label=t("No usage data for this provider."), xalign=0.0)
             add_css_class(empty, "codexbar-subtitle")
             append(self.body, empty)
 
@@ -1372,9 +1545,9 @@ class CodexBarPopup(Gtk.Application):
     def _section(self, title: str, window: dict, *, usage_known: bool = True) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         add_css_class(box, "codexbar-metric")
-        t = Gtk.Label(label=title, xalign=0.0)
-        add_css_class(t, "codexbar-section-title")
-        append(box, t)
+        heading = Gtk.Label(label=title, xalign=0.0)
+        add_css_class(heading, "codexbar-section-title")
+        append(box, heading)
 
         pct = window.get("usedPercent")
         bar = Gtk.LevelBar()
@@ -1388,26 +1561,30 @@ class CodexBarPopup(Gtk.Application):
         if remaining is None:
             bar.set_no_show_all(True)
             bar.hide()
-        bar.set_tooltip_text(f"{remaining:g}% remaining" if remaining is not None else "Usage unavailable")
+        else:
+            self.new_bars.append((bar, (self.active_pid, title), remaining))
+        bar.set_tooltip_text(t("{pct}% remaining", pct=f"{remaining:g}") if remaining is not None else t("Usage unavailable"))
+        level = None
         if isinstance(pct, (int, float)):
-            if pct >= 90:
-                add_css_class(bar, "critical")
-            elif pct >= 70:
-                add_css_class(bar, "warning")
+            level = "critical" if pct >= 90 else "warning" if pct >= 70 else None
+            if level:
+                add_css_class(bar, level)
         append(box, bar)
 
         details = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         if not usage_known:
-            left_text = "Reset tracked"
+            left_text = t("Reset tracked")
         elif isinstance(pct, (int, float)):
             regen = window.get("nextRegenPercent")
-            left_text = f"{remaining:g}% remaining" if remaining is not None else "—"
+            left_text = t("{pct}% remaining", pct=f"{remaining:g}") if remaining is not None else "—"
             if isinstance(regen, (int, float)) and regen > 0:
-                left_text += f" · +{compact_number(regen)}% next regen"
+                left_text += t(" · +{n}% next regen", n=compact_number(regen))
         else:
             left_text = "—"
         left = Gtk.Label(label=left_text, xalign=0.0, hexpand=True)
         add_css_class(left, "codexbar-section-detail-left")
+        if level and usage_known:
+            add_css_class(left, level)
         append(details, left)
 
         reset_text = format_reset_label(window, current_reset_format())

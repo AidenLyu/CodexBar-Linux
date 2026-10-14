@@ -11,7 +11,7 @@ import tempfile
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = '1.0.2'
+VERSION = '1.0.3'
 CLI_VERSION = '0.58.0'
 ASSET = f'CodexBarCLI-v{CLI_VERSION}-linux-musl-x86_64.tar.gz'
 DIGEST = 'c2bc606e6300626d5b2f9ec1948f4ed151a850db97837bd54efa6fdb2b230205'
@@ -54,7 +54,7 @@ def build():
                     target.chmod(0o755 if relative.name == 'CodexBarCLI' else 0o644)
         binary = next(lib.rglob('CodexBarCLI'))
         (lib / 'codexbar-cli').symlink_to(binary.relative_to(lib))
-        for name in ['codexbar-popup.py','codexbar-tray.py','codexbar_paths.py','codexbar.sh','codexbar-popup-launch.sh','codexbar-tray.svg']:
+        for name in ['codexbar-popup.py','codexbar-tray.py','codexbar_paths.py','codexbar_i18n.py','codexbar.sh','codexbar-popup-launch.sh','codexbar-tray.svg']:
             copy(ROOT/name,lib/name,name.endswith('.sh') or name in ['codexbar-popup.py','codexbar-tray.py'])
         subprocess.run(['cc','-shared','-fPIC','-O2','-s','-o',str(lib/'cert_redirect.so'),str(ROOT/'cert_redirect.c'),'-ldl'],check=True)
         copy(ROOT/'packaging/codexbar-linux',stage/'usr/bin/codexbar-linux',True)

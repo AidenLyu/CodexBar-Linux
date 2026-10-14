@@ -37,6 +37,10 @@ def load_popup_module():
 
 
 popup = load_popup_module()
+# Tests assert English text: ignore the developer's saved language and locale.
+import codexbar_i18n
+codexbar_i18n.STATE_PATH = Path("/nonexistent/codexbar-state.json")
+os.environ["LANGUAGE"] = "en"
 
 
 def usage_entry(provider, used_percent, *, account=None, error=None):
